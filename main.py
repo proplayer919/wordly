@@ -5,9 +5,13 @@ starting_word = "atone"
 
 print(f"{Fore.CYAN}WORDLY{Style.RESET_ALL}")
 
-print(f"{Fore.BLUE}How to enter answers: 'g' for a green letter, 'y' for a yellow letter, '-' for a grey letter. Example: '-gy--'{Style.RESET_ALL}")
+print(
+    f"{Fore.BLUE}How to enter answers: 'g' for a green letter, 'y' for a yellow letter, '-' for a grey letter. Example: '-gy--'{Style.RESET_ALL}"
+)
 
-guess = input(f"{Fore.YELLOW}Enter starting word (blank for \"{starting_word}\"): {Style.RESET_ALL}")
+guess = input(
+    f'{Fore.YELLOW}Enter starting word (blank for "{starting_word}"): {Style.RESET_ALL}'
+)
 answer = input(f"{Fore.GREEN}Enter answer: {Style.RESET_ALL}")
 
 play(guess, answer)

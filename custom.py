@@ -15,7 +15,9 @@ target = input(f"{Fore.YELLOW}Enter target word: {Style.RESET_ALL}")
 if not target:
     target = possible_answers[random.randint(0, len(possible_answers) - 1)]
 
-allowed_guesses = input(f"{Fore.YELLOW}Enter number of allowed guesses: {Style.RESET_ALL}")
+allowed_guesses = input(
+    f"{Fore.YELLOW}Enter number of allowed guesses: {Style.RESET_ALL}"
+)
 
 if not allowed_guesses:
     allowed_guesses = 5

@@ -27,7 +27,7 @@ for i in range(5):
     answer = input(f"{Fore.GREEN}Enter answer: {Style.RESET_ALL}")
 
     if answer == "ggggg":
-        print(f"{Fore.RED}Correct: {Style.RESET_ALL}{guess}")
+        print(f"{Fore.BLUE}Correct: {Style.RESET_ALL}{guess}")
         exit()
 
     if i == 4:

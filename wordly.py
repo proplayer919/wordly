@@ -36,13 +36,21 @@ def rank_guess(guess: str):
         return -math.inf
 
     score = 0
+    guessed_chars = set()
+
     for i, char in enumerate(guess):
+        if char in guessed_chars:
+            score -= 1
+        guessed_chars.add(char)
+
         if char in not_possible_chars:
             score -= 2
+
         if known[i] == char:
-            score += 1
+            score += 2
+
         score += sum(
-            0.5 for obj in unknown if obj["char"] == char and obj["index"] != i
+            1.0 for obj in unknown if obj["char"] == char and obj["index"] != i
         )
 
     return score

@@ -1,72 +1,42 @@
-import math
+from engine import play, best_guess
+from colorama import Fore, Style
 
-# Read and process the possible guesses
-with open("guesses.txt", "r") as f:
-    possible_guesses = [line.strip() for line in f if line.strip()]
+starting_word = "atone"
 
-# Use sets for faster membership testing
-not_possible_chars = set()
-known_not_words = set()
+print(f"{Fore.CYAN}WORDLY{Style.RESET_ALL}")
 
-# Initialize known and unknown structures
-known = ["*"] * 5
-unknown = []
+print(
+    f"{Fore.BLUE}How to enter answers: 'g' for a green letter, 'y' for a yellow letter, '-' for a grey letter. Example: '-gy--'{Style.RESET_ALL}"
+)
 
+guess = input(
+    f'{Fore.YELLOW}Enter starting word (blank for "{starting_word}"): {Style.RESET_ALL}'
+)
+answer = input(f"{Fore.GREEN}Enter answer: {Style.RESET_ALL}")
 
-def play(guess: str, answer: str):
-    if guess not in known_not_words:
-        known_not_words.add(guess)
+play(guess, answer)
 
-    for i, char in enumerate(guess):
-        if answer[i] == "-":
-            not_possible_chars.add(char)
-        elif answer[i] == "y":
-            obj = {"char": char, "index": i}
-            if obj not in unknown:
-                unknown.append(obj)
-        else:
-            known[i] = char
-            unknown[:] = [
-                obj for obj in unknown if obj["char"] != char or obj["index"] == i
-            ]
+guess = best_guess()
 
+if not guess:
+    exit()
 
-def rank_guess(guess: str):
-    if not guess or guess in known_not_words:
-        return -math.inf
+print(f"{Fore.LIGHTMAGENTA_EX}Best guess: {Style.RESET_ALL}{guess}")
 
-    score = 0
-    guessed_chars = set()
+for i in range(5):
+    answer = input(f"{Fore.GREEN}Enter answer: {Style.RESET_ALL}")
 
-    for i, char in enumerate(guess):
-        if char in guessed_chars:
-            score -= 1
-        guessed_chars.add(char)
+    if answer == "ggggg":
+        print(f"{Fore.BLUE}Correct: {Style.RESET_ALL}{guess}")
+        exit()
 
-        if char in not_possible_chars:
-            score -= 2
+    if i == 4:
+        print(f"{Fore.RED}Incorrect: {Style.RESET_ALL}The target wasn't found")
+    else:
+        play(guess, answer)
 
-        if known[i] == char:
-            score += 2
+        guess = best_guess()
 
-        score += sum(
-            1.0 for obj in unknown if obj["char"] == char and obj["index"] != i
-        )
-
-    return score
-
-
-def best_guess():
-    best_score = -math.inf
-    best_guess = None
-
-    for guess in possible_guesses:
-        score = rank_guess(guess)
-        if score > best_score:
-            best_score = score
-            best_guess = guess
-
-    if best_guess is None:
-        print("Ran out of guesses")
-
-    return best_guess
+        if not guess:
+            exit()
+        print(f"{Fore.LIGHTMAGENTA_EX}Best guess: {Style.RESET_ALL}{guess}")

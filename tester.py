@@ -1,4 +1,4 @@
-from wordly import play, best_guess
+from engine import play, best_guess
 from colorama import Fore, Style
 from utils import get_answer
 
@@ -17,7 +17,7 @@ for i in range(len(possible_answers)):
     answer = get_answer(starting_word, target)
 
     if answer == "ggggg":
-        print(f"{Fore.RED}Got in 1: {Style.RESET_ALL}{starting_word}")
+        print(f"{Fore.YELLOW}Got in 1: {Style.RESET_ALL}{starting_word}")
         amounts[0] += 1
         continue
 
@@ -33,7 +33,7 @@ for i in range(len(possible_answers)):
         answer = get_answer(guess, target)
 
         if answer == "ggggg":
-            print(f"{Fore.RED}Got in {j+2}: {Style.RESET_ALL}{guess}")
+            print(f"{Fore.BLUE}Got in {j+2}: {Style.RESET_ALL}{guess}")
             amounts[j + 1] += 1
             break
 
@@ -45,7 +45,7 @@ for i in range(len(possible_answers)):
             amounts[6] += 1
             break
 
-total = sum(amounts) - amounts[6]
+total = sum(amounts)
 
 print(f"\n{Fore.BLUE}Results: {Style.RESET_ALL}")
 

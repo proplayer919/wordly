@@ -1,4 +1,4 @@
-from wordly import best_guess, play
+from engine import best_guess, play
 from colorama import Fore, Style
 import random
 from utils import get_answer

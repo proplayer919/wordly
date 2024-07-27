@@ -34,6 +34,7 @@ for i in range(len(possible_answers)):
 
         if answer == "ggggg":
             print(f"{Fore.BLUE}Got in {j+2}: {Style.RESET_ALL}{guess}")
+            open("results.txt", "a").write(f"Got in {j+2}: {guess}\n")
             amounts[j + 1] += 1
             break
 
@@ -43,6 +44,8 @@ for i in range(len(possible_answers)):
 
         if not guess:
             amounts[6] += 1
+            print(f"{Fore.RED}Failed: {Style.RESET_ALL}{target} wasn't found")
+            open("results.txt", "a").write(f"Failed: {guess}\n")
             break
 
 total = sum(amounts)

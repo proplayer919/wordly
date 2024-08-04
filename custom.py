@@ -3,7 +3,8 @@ from colorama import Fore, Style
 import random
 from utils import get_answer
 
-possible_answers = [x for x in open("answers.txt", "r").read().splitlines() if x]
+with open("answers.txt", "r") as f:
+    possible_answers = [line.strip() for line in f if line.strip()]
 
 starting_word = "atone"
 

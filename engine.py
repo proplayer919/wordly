@@ -2,21 +2,23 @@ import math
 from colorama import Fore, Style
 import csv
 import re
+import itertools
+from concurrent.futures import ThreadPoolExecutor
 
 freqs = {}
 
 # Define a regex pattern to match keys that are exactly 5 letters long and contain only alphabetic characters
-pattern = re.compile(r'^[a-zA-Z]{5}$')
+pattern = re.compile(r"^[a-zA-Z]{5}$")
 
 # Open and read the CSV file
-with open("word_frequencies.csv", mode='r', newline='', encoding='utf-8') as file:
+with open("word_frequencies.csv", mode="r", newline="", encoding="utf-8") as file:
     reader = csv.reader(file)
-        
+
     for row in reader:
         # Ensure the row has at least two columns
         if len(row) >= 2:
             key, value = row[0], row[1]
-                
+
             # Apply the filter: only include keys that match the pattern
             if pattern.match(key):
                 freqs[key] = value
@@ -45,7 +47,9 @@ def get_answer(guess: str, target: str) -> str:
 
 
 class Game:
-    def __init__(self):
+    def __init__(self, use_new_logic: bool = False):
+        self.use_new_logic = use_new_logic
+        
         self.not_possible_chars = set()
         self.known_not_words = set()
 
@@ -54,8 +58,29 @@ class Game:
 
         self.guesses = []
         self.patterns = []
+        
+        if use_new_logic: self.all_patterns = self.get_all_patterns()
 
-    def get_words_from_pattern(self, patterns: list[str], guesses: list[str]) -> list[str]:
+    def get_all_patterns(self) -> list[str]:
+        """
+        Gets all possible patterns.
+
+        Args: None
+
+        Returns:
+            list[str]: The list of possible patterns.
+        """
+        possible_values = ["g", "y", "-"]
+        combinations = 3**5
+
+        return [
+            "".join(pattern)
+            for pattern in itertools.product(possible_values, repeat=combinations)
+        ]
+
+    def get_words_from_pattern(
+        self, patterns: list[str], guesses: list[str]
+    ) -> list[str]:
         """
         Gets all words that match the given patterns.
 
@@ -95,7 +120,6 @@ class Game:
 
         return new_words
 
-
     def play(self, guess: str, answer: str):
         self.guesses.append(guess)
         self.patterns.append(answer)
@@ -113,7 +137,9 @@ class Game:
             else:
                 self.known[i] = char
                 self.unknown[:] = [
-                    obj for obj in self.unknown if obj["char"] != char or obj["index"] == i
+                    obj
+                    for obj in self.unknown
+                    if obj["char"] != char or obj["index"] == i
                 ]
 
     def rank_guess(self, guess: str, frequency_multiplier: float = 1.0):
@@ -133,7 +159,7 @@ class Game:
 
             if self.known[i] == char:
                 score += 1000
-                
+
             if guess in freqs:
                 score += float(freqs[guess]) * frequency_multiplier
             else:
@@ -145,27 +171,83 @@ class Game:
 
         return score
 
-    def best_guess(self):
-        best_score = -math.inf
+    def best_guess(self, alpha=-math.inf, beta=math.inf, max_workers=4) -> str | None:
+        if not self.use_new_logic:
+            best_score = -math.inf
+            best_guess = None
+
+            guesses = self.get_words_from_pattern(self.patterns, self.guesses)
+
+            if not guesses:
+                guesses = possible_guesses
+
+            if not guesses:
+                print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
+                return None
+
+            for guess in guesses:
+                score = self.rank_guess(guess)
+                if score > best_score:
+                    best_score = score
+                    best_guess = guess
+
+            if best_guess is None:
+                print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
+
+            return best_guess
+
+        best_len = -math.inf
         best_guess = None
 
-        guesses = self.get_words_from_pattern(self.patterns, self.guesses)
+        words = self.get_words_from_pattern(self.patterns, self.guesses)
+        words_len = len(words)
 
-        if not guesses:
-            guesses = possible_guesses
-
-        if not guesses:
+        # Edge case: if no words left, terminate
+        if words_len == 0:
             print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
             return None
 
-        for guess in guesses:
-            score = self.rank_guess(guess)
-            if score > best_score:
-                best_score = score
-                best_guess = guess
+        # If only one word is left, return it immediately
+        if words_len == 1:
+            return words[0]
 
-        if best_guess is None:
-            print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
+        patterns = self.all_patterns  # Get patterns once instead of repeatedly in the loop
+
+        def evaluate_word(word):
+            """Helper function to evaluate the average lengths for a given word."""
+            lengths_sum = 0
+            count_patterns = 0
+
+            for pattern in patterns:
+                temp_game = self.copy()  # Assuming there's a method to copy the game state
+                temp_game.play(word, pattern)
+                length = len(
+                    temp_game.get_words_from_pattern(temp_game.patterns, temp_game.guesses)
+                )
+
+                lengths_sum += length
+                count_patterns += 1
+
+                avg = lengths_sum / count_patterns
+                if avg > beta:  # If avg exceeds beta, no need to evaluate further
+                    break
+
+            return word, lengths_sum / count_patterns if count_patterns > 0 else 0
+
+        # Use ThreadPoolExecutor to parallelize word evaluations
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_word = {executor.submit(evaluate_word, word): word for word in words}
+
+            for future in future_to_word:
+                word, avg = future.result()
+
+                if avg > best_len:
+                    best_len = avg
+                    best_guess = word
+
+                if best_len >= beta:  # Prune further exploration
+                    break
+                alpha = max(alpha, best_len)
 
         return best_guess
 
@@ -176,7 +258,9 @@ class Game:
 
         representation = ""
         for i, pattern in enumerate(self.patterns):
-            pattern = pattern.replace("g", green).replace("y", yellow).replace("-", grey)
+            pattern = (
+                pattern.replace("g", green).replace("y", yellow).replace("-", grey)
+            )
             representation += pattern + "\n"
 
         return representation

@@ -3,6 +3,8 @@ from colorama import Fore, Style
 import random
 import os
 import traceback
+import datetime
+import requests
 
 starting_word = "salet"
 
@@ -147,8 +149,9 @@ def normal_mode():
                 return
             print(f"{Fore.LIGHTMAGENTA_EX}Best guess: {Style.RESET_ALL}{guess}")
             
-def custom_mode():
-    target = input(
+def custom_mode(target=None):
+    if not target:
+        target = input(
             f"{Fore.BLUE}Enter target word: {Style.RESET_ALL}"
         ) or random.choice(load_words("answers.txt"))
     print(f"{Fore.YELLOW}Using target: {Style.RESET_ALL}{target}")
@@ -166,7 +169,7 @@ def main():
     try:
         mode = int(
             input(
-                f"{Fore.YELLOW}Choose mode (1: normal, 2: custom, 3: test): {Style.RESET_ALL}"
+                f"{Fore.YELLOW}Choose mode (1: normal, 2: custom, 3: today's, 4: test): {Style.RESET_ALL}"
             )
         )
     except ValueError:
@@ -178,6 +181,11 @@ def main():
     elif mode == 2:
         custom_mode()
     elif mode == 3:
+        date = datetime.date.today()
+        url = f"https://www.nytimes.com/svc/wordle/v2/{date:%Y-%m-%d}.json"
+        response = requests.get(url).json()
+        custom_mode(response['solution'])
+    elif mode == 4:
         print(f"{Fore.CYAN}Testing all possible answers...{Style.RESET_ALL}")
         avg_guesses = simulate_game_for_all_targets(load_words("answers.txt"))
         print(f"{Fore.GREEN}Average guesses: {avg_guesses}{Style.RESET_ALL}")

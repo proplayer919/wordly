@@ -1,6 +1,6 @@
 # Wordly
 
-Wordly is a wordle solver.
+Wordly is a wordle solver. Current WSE rating: ``4.8761368557817235``
 
 ## Answer format
 

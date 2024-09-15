@@ -1,8 +1,10 @@
 # Wordly
 
-Wordly is a wordle solver. Current WSE rating: ``4.8761368557817235``
+Wordly is a wordle solver using UWIv2 (Universal Wordle Interface) to communicate between Wordly and its interface.
 
-## Answer format
+**Current WSE rating: approx. ``3.85`` (exact in 'wse.txt' file).**
+
+## Answer format (PWN - Portable Wordle Notation)
 
 The answer format is 'g' for a green letter (correct letter in correct position), 'y' for a yellow letter (correct letter in wrong position), and '-' for a grey letter (incorrect letter).
 

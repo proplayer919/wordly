@@ -2,8 +2,7 @@ import math
 from colorama import Fore, Style
 import csv
 import re
-import itertools
-from concurrent.futures import ThreadPoolExecutor
+import traceback
 
 freqs = {}
 
@@ -47,9 +46,9 @@ def get_answer(guess: str, target: str) -> str:
 
 
 class Game:
-    def __init__(self, use_new_logic: bool = False):
-        self.use_new_logic = use_new_logic
-        
+    def __init__(self):
+        self.starting_word = "salet"
+
         self.not_possible_chars = set()
         self.known_not_words = set()
 
@@ -58,25 +57,81 @@ class Game:
 
         self.guesses = []
         self.patterns = []
-        
-        if use_new_logic: self.all_patterns = self.get_all_patterns()
 
-    def get_all_patterns(self) -> list[str]:
+    def clean(self):
+        self.known = ["*"] * 5
+        self.unknown = []
+        self.guesses = []
+        self.patterns = []
+        self.not_possible_chars = set()
+        self.known_not_words = set()
+
+    def decode_pwn(self, pwn: str) -> tuple[list[str], list[str]]:
         """
-        Gets all possible patterns.
+        Decodes the given PWN (Portable Wordle Notation) string.
 
-        Args: None
+        Args:
+            pwn (str): The PWN (Portable Wordle Notation) string to decode.
 
         Returns:
-            list[str]: The list of possible patterns.
+            tuple[list[str], list[str]]: A tuple containing the decoded patterns and guesses.
         """
-        possible_values = ["g", "y", "-"]
-        combinations = 3**5
+        chunks = pwn.split("/")
+        guesses = []
+        patterns = []
+        for chunk in chunks:
+            if chunk == "":
+                continue
+            guesses.append(chunk[:5])
+            patterns.append(chunk[5:])
+        return patterns, guesses
 
-        return [
-            "".join(pattern)
-            for pattern in itertools.product(possible_values, repeat=combinations)
-        ]
+    def uwi_cmd(self, cmd: str) -> str:
+        """
+        Executes the given UWI (Universal Wordle Interface) command.
+
+        Args:
+            cmd (str): The command to execute.
+
+        Returns:
+            str: The output of the command.
+        """
+        if cmd == "uwi":
+            return "uwi2ok"
+        elif cmd.startswith("pos "):
+            try:
+                position = cmd[4:]
+                if position == "blank":
+                    return "posok"
+                else:
+                    position = self.decode_pwn(position)
+                    self.play_all(position[1], position[0])
+                    return "posok"
+            except Exception as e:
+                with open("error.log", "w") as f:
+                    f.write(traceback.format_exc())
+                print(
+                    f"{Fore.RED}Error while executing UWI command {cmd}. Check 'error.log' for details.{Style.RESET_ALL}"
+                )
+                return "poserror"
+        elif cmd == "guess":
+            return "guessok\n" + self.best_guess() or "guesserror"
+        elif cmd.startswith("pwn "):
+            try:
+                pwn = cmd[4:]
+                position = self.decode_pwn(pwn)
+                self.clean()
+                self.play_all(position[1], position[0])
+                return "pwnok"
+            except Exception as e:
+                with open("error.log", "w") as f:
+                    f.write(traceback.format_exc())
+                print(
+                    f"{Fore.RED}Error while executing UWI command {cmd}. Check 'error.log' for details.{Style.RESET_ALL}"
+                )
+                return "pwnerror"
+        elif cmd.startswith("win") or cmd.startswith("lose"):
+            return cmd + "ok"
 
     def get_words_from_pattern(
         self, patterns: list[str], guesses: list[str]
@@ -142,6 +197,10 @@ class Game:
                     if obj["char"] != char or obj["index"] == i
                 ]
 
+    def play_all(self, guesses: list[str], answers: list[str]):
+        for guess, answer in zip(guesses, answers):
+            self.play(guess, answer)
+
     def rank_guess(self, guess: str, frequency_multiplier: float = 1.0):
         if not guess or guess in self.known_not_words:
             return -math.inf
@@ -171,83 +230,30 @@ class Game:
 
         return score
 
-    def best_guess(self, alpha=-math.inf, beta=math.inf, max_workers=4) -> str | None:
-        if not self.use_new_logic:
-            best_score = -math.inf
-            best_guess = None
+    def best_guess(self) -> str | None:
+        if not self.guesses:
+            return self.starting_word
 
-            guesses = self.get_words_from_pattern(self.patterns, self.guesses)
-
-            if not guesses:
-                guesses = possible_guesses
-
-            if not guesses:
-                print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
-                return None
-
-            for guess in guesses:
-                score = self.rank_guess(guess)
-                if score > best_score:
-                    best_score = score
-                    best_guess = guess
-
-            if best_guess is None:
-                print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
-
-            return best_guess
-
-        best_len = -math.inf
+        best_score = -math.inf
         best_guess = None
 
-        words = self.get_words_from_pattern(self.patterns, self.guesses)
-        words_len = len(words)
+        guesses = self.get_words_from_pattern(self.patterns, self.guesses)
 
-        # Edge case: if no words left, terminate
-        if words_len == 0:
+        if not guesses:
+            guesses = possible_guesses
+
+        if not guesses:
             print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
             return None
 
-        # If only one word is left, return it immediately
-        if words_len == 1:
-            return words[0]
+        for guess in guesses:
+            score = self.rank_guess(guess)
+            if score > best_score:
+                best_score = score
+                best_guess = guess
 
-        patterns = self.all_patterns  # Get patterns once instead of repeatedly in the loop
-
-        def evaluate_word(word):
-            """Helper function to evaluate the average lengths for a given word."""
-            lengths_sum = 0
-            count_patterns = 0
-
-            for pattern in patterns:
-                temp_game = self.copy()  # Assuming there's a method to copy the game state
-                temp_game.play(word, pattern)
-                length = len(
-                    temp_game.get_words_from_pattern(temp_game.patterns, temp_game.guesses)
-                )
-
-                lengths_sum += length
-                count_patterns += 1
-
-                avg = lengths_sum / count_patterns
-                if avg > beta:  # If avg exceeds beta, no need to evaluate further
-                    break
-
-            return word, lengths_sum / count_patterns if count_patterns > 0 else 0
-
-        # Use ThreadPoolExecutor to parallelize word evaluations
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_word = {executor.submit(evaluate_word, word): word for word in words}
-
-            for future in future_to_word:
-                word, avg = future.result()
-
-                if avg > best_len:
-                    best_len = avg
-                    best_guess = word
-
-                if best_len >= beta:  # Prune further exploration
-                    break
-                alpha = max(alpha, best_len)
+        if best_guess is None:
+            print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
 
         return best_guess
 

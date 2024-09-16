@@ -3,6 +3,7 @@ from colorama import Fore, Style
 import csv
 import re
 import traceback
+import concurrent.futures
 
 freqs = {}
 
@@ -58,6 +59,10 @@ class Game:
         self.guesses = []
         self.patterns = []
 
+        self.entropy_cache = {}
+
+        self.use_info_gain = True
+
     def clean(self):
         self.known = ["*"] * 5
         self.unknown = []
@@ -65,6 +70,7 @@ class Game:
         self.patterns = []
         self.not_possible_chars = set()
         self.known_not_words = set()
+        self.entropy_cache = {}
 
     def decode_pwn(self, pwn: str) -> tuple[list[str], list[str]]:
         """
@@ -96,6 +102,8 @@ class Game:
         Returns:
             str: The output of the command.
         """
+        print(f"{Fore.CYAN}Received UWI command: {cmd}{Style.RESET_ALL}")  # For debug
+
         if cmd == "uwi":
             return "uwi2ok"
         elif cmd.startswith("pos "):
@@ -137,43 +145,87 @@ class Game:
         self, patterns: list[str], guesses: list[str]
     ) -> list[str]:
         """
-        Gets all words that match the given patterns.
-
-        Args:
-            patterns (list[str]): The patterns to match.
-            guesses (list[str]): The guesses that made the patterns.
-
-        Returns:
-            list[str]: The list of words that match the patterns.
+        Quickly filter words based on patterns and guesses, minimizing unnecessary checks.
         """
-        words = []
-        for word in possible_guesses:
-            if word not in guesses:
-                words.append(word)
-
         new_words = []
-        for word in words:
-            allowed = True
+
+        for word in possible_guesses:
+            if word in guesses:
+                continue
+
+            match = True
             for i, pattern in enumerate(patterns):
                 for j, char in enumerate(word):
-                    try:
-                        if pattern[j] == "-" and char in guesses[i]:
-                            allowed = False
-                            break
-                        elif pattern[j] == "y" and char not in guesses[i]:
-                            allowed = False
-                            break
-                        elif pattern[j] == "g" and word[i] != guesses[i][j]:
-                            allowed = False
-                            break
-                    except IndexError:
-                        allowed = False
+                    if pattern[j] == "-" and char in guesses[i]:
+                        match = False
+                        break
+                    elif pattern[j] == "y" and (
+                        char not in guesses[i] or word[i] == guesses[i][j]
+                    ):
+                        match = False
+                        break
+                    elif pattern[j] == "g" and word[j] != guesses[i][j]:
+                        match = False
                         break
 
-            if allowed:
+                if not match:
+                    break
+
+            if match:
                 new_words.append(word)
 
         return new_words
+
+    def calculate_entropy(self, guess: str, possible_words: list[str]) -> float:
+        """
+        Calculate and cache the entropy for a given guess based on the possible words.
+        """
+        if guess in self.entropy_cache:
+            return self.entropy_cache[guess]
+
+        pattern_counts = {}
+
+        for word in possible_words:
+            pattern = get_answer(guess, word)  # Simulate the pattern for this guess
+            if pattern not in pattern_counts:
+                pattern_counts[pattern] = 0
+            pattern_counts[pattern] += 1
+
+        entropy = 0.0
+        total_words = len(possible_words)
+
+        for pattern, count in pattern_counts.items():
+            probability = count / total_words
+            entropy -= probability * math.log2(probability)
+
+        self.entropy_cache[guess] = entropy
+        return entropy
+
+    def get_entropy_frequency_weights(
+        self,
+        remaining_words_count: int,
+        total_words_count: int,
+        entropy_weight_multiplier: float = 0.8,
+    ) -> tuple[float, float]:
+        """
+        Dynamically calculate weights for entropy and frequency based on the number of remaining possible words.
+
+        Args:
+            remaining_words_count (int): The current number of possible words.
+            total_words_count (int): The total number of words in the dictionary.
+
+        Returns:
+            tuple[float, float]: A tuple of entropy weight and frequency weight.
+        """
+        # Early in the game (many possible words), prioritize entropy
+        entropy_weight = (
+            remaining_words_count / total_words_count
+        ) * entropy_weight_multiplier
+
+        # Later in the game (fewer possible words), prioritize frequency
+        frequency_weight = max(3.0 - entropy_weight, 1.0)
+
+        return entropy_weight, frequency_weight
 
     def play(self, guess: str, answer: str):
         self.guesses.append(guess)
@@ -201,44 +253,85 @@ class Game:
         for guess, answer in zip(guesses, answers):
             self.play(guess, answer)
 
-    def rank_guess(self, guess: str, frequency_multiplier: float = 1.0):
+    def rank_all_guesses(self, guesses: list[str]) -> str:
+        """
+        Rank all guesses in parallel using concurrent processing to speed up the ranking process.
+        """
+        best_score = -math.inf
+        best_guess = None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_guess = {
+                executor.submit(self.rank_guess, guess): guess for guess in guesses
+            }
+
+            for future in concurrent.futures.as_completed(future_to_guess):
+                guess = future_to_guess[future]
+                score = future.result()
+
+                if score > best_score:
+                    best_score = score
+                    best_guess = guess
+
+        return best_guess
+
+    def rank_guess(
+        self,
+        guess: str,
+        frequency_multiplier: float = 10.0,
+        discard_guesses_not_in_freqs: bool = True,
+    ) -> float:
         if not guess or guess in self.known_not_words:
             return -math.inf
 
-        score = 0
-        guessed_chars = set()
+        if any(char in self.not_possible_chars for char in guess):
+            return -math.inf  # Early return for impossible guesses
 
-        for i, char in enumerate(guess):
-            if char in guessed_chars:
-                score -= 2
-            guessed_chars.add(char)
+        possible_words = self.get_words_from_pattern(self.patterns, self.guesses)
+        if not possible_words:
+            # print(
+            #     f"{Fore.RED}Error: No possible words found for guess: {guess}. Using all possible words.{Style.RESET_ALL}"
+            # )
+            possible_words = possible_guesses
 
-            if char in self.not_possible_chars:
-                score -= 5
+        # Skip guesses that are not in the frequency list
+        score_penalty = 0
+        if guess not in freqs and discard_guesses_not_in_freqs:
+            score_penalty = 100  # Discard guesses not in the frequency list
 
-            if self.known[i] == char:
-                score += 1000
+        # Calculate entropy for the guess, but skip already invalid guesses
+        entropy = self.calculate_entropy(guess, possible_words)
 
-            if guess in freqs:
-                score += float(freqs[guess]) * frequency_multiplier
-            else:
-                score += 0.075
+        # Calculate frequency score
+        frequency_score = float(freqs.get(guess, 0.075)) * frequency_multiplier
 
-            score += sum(
-                1.0 for obj in self.unknown if obj["char"] == char and obj["index"] != i
-            )
+        # Get dynamic weights
+        total_words_count = len(possible_guesses)
+        remaining_words_count = len(possible_words)
+        entropy_weight, frequency_weight = self.get_entropy_frequency_weights(
+            remaining_words_count, total_words_count
+        )
+
+        # Combine entropy and frequency scores
+        score = (
+            (entropy_weight * entropy)
+            + (frequency_weight * frequency_score)
+            - score_penalty
+        )
 
         return score
 
-    def best_guess(self) -> str | None:
+    def best_guess(self, discard_guesses_not_in_freqs: bool = True) -> str | None:
         if not self.guesses:
             return self.starting_word
 
         best_score = -math.inf
         best_guess = None
 
+        # Get possible guesses from current patterns and guesses
         guesses = self.get_words_from_pattern(self.patterns, self.guesses)
 
+        # If no words match the pattern, use the full possible guess list
         if not guesses:
             guesses = possible_guesses
 
@@ -246,14 +339,26 @@ class Game:
             print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
             return None
 
+        # Find the best guess based on rank (entropy + frequency combined)
         for guess in guesses:
-            score = self.rank_guess(guess)
+            score = self.rank_guess(
+                guess,
+                10 if discard_guesses_not_in_freqs else 1,
+                discard_guesses_not_in_freqs,
+            )
             if score > best_score:
                 best_score = score
                 best_guess = guess
 
         if best_guess is None:
+            if discard_guesses_not_in_freqs:
+                print(
+                    f"{Fore.RED}Ran out of guesses so switching to not discard guesses not in the frequency list{Style.RESET_ALL}"
+                )
+                return self.best_guess(False)
+
             print(f"{Fore.RED}Ran out of guesses{Style.RESET_ALL}")
+            return None
 
         return best_guess
 

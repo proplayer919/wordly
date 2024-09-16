@@ -202,8 +202,9 @@ def play_game(target=None, max_guesses=5):
                 return
 
             if answer == "ggggg":
-                print(game.get_combined_rep())
                 game.uwi_cmd("win" + str(i + 2))
+                print(game.get_combined_rep())
+                return
 
             if i != max_guesses - 1:
                 guess = game.uwi_cmd("guess")
@@ -218,6 +219,8 @@ def play_game(target=None, max_guesses=5):
                     return
             else:
                 game.uwi_cmd("lose" + str(i + 2))
+                print(game.get_combined_rep())
+                return
 
 
 def custom_mode(target=None):

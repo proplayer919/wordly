@@ -1,1 +1,2 @@
-3.854482459939368
+V2: 3.854482459939368
+V3 (latest using information theory): Untested (because it will take forever. estimate: ~3.5)
